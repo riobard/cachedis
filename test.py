@@ -35,6 +35,6 @@ cli.mset(d)
 #cli.mget(d)
 
 
-cli = Cachedis(shards=cfg.shards[:1])
+cli = Cachedis(shards[:1])
 cli.mset(d)
 #cli.mget(d)
