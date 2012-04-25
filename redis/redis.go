@@ -51,8 +51,6 @@ func pack(args... []byte) []byte {
 }
 
 
-
-
 func parseReply(buf []byte) {
     switch buf[0] {
     case '+':
@@ -98,10 +96,12 @@ func parseMultiBulkReply(buf []byte) [][]byte {
         if kind == '$' {
             v, pos := parseBulkReply(buf[1:])
             res[j] = v
-            if v == nil {
-                log.Printf("parseBulkReply> result nil")
-            } else {
-                log.Printf("parseBulkReply> result %q", v)
+            if DEBUG {
+                if v == nil {
+                    log.Printf("parseBulkReply> result nil")
+                } else {
+                    log.Printf("parseBulkReply> result %q", v)
+                }
             }
             buf = buf[pos:]
         }
