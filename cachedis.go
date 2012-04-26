@@ -67,25 +67,17 @@ func main() {
     c := shardis.Open([]string{
         "debian2.zhq:6400", 
         "debian2.zhq:6400", 
-        "debian2.zhq:6400", 
-        "debian2.zhq:6400", 
 
-        "debian2.zhq:6401",
-        "debian2.zhq:6401",
         "debian2.zhq:6401",
         "debian2.zhq:6401",
 
         "debian2.zhq:6402",
         "debian2.zhq:6402",
-        "debian2.zhq:6402",
-        "debian2.zhq:6402",
 
-        "debian2.zhq:6403",
-        "debian2.zhq:6403",
         "debian2.zhq:6403",
         "debian2.zhq:6403",
     })
-    N := 1000
+    N := 500
     //m := make(map[string][]byte)
 
     keys := []string{}
@@ -93,9 +85,9 @@ func main() {
         k := fmt.Sprintf("uid:%d", i)
         keys = append(keys, k)
         //v := []byte(fmt.Sprintf("%d", i))
-        //v := make([]byte, 40<<10)
+        v := make([]byte, 40<<10)
         //m[k] = v
-        //c.Set(k, v)
+        c.Set(k, v)
         /*
         v := c.Get(k)
         if false {

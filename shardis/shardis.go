@@ -70,7 +70,7 @@ func (c Shardis) ParaMget(keys... string) map[string][]byte {
     ch := make(chan map[string][]byte, len(c.shards))
     for i, shard := range c.shards {
         go func(i uint, shard *redis.Redis) {
-            m := c.shards[i].Mget(t[i]...)
+            m := shard.Mget(t[i]...)
             ch <- m
         }(uint(i), shard)
     }
