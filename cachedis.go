@@ -24,6 +24,17 @@ func main() {
     fmt.Printf("===> %q\n", m)
 
     r.Set("hello", []byte(""))
-    fmt.Printf("hello = %q\n", r.Get("hello"))
-    fmt.Printf("hell = %q\n", r.Get("hell"))
+    res1 := r.Get("hello")
+    if res1 != nil {
+        fmt.Printf("hello = %q\n", res1)
+    } else {
+        fmt.Printf("hello = nil\n")
+    }
+    
+    res2 := r.Get("hell")
+    if res2 != nil {
+        fmt.Printf("hell = %q\n", res2)
+    } else {
+        fmt.Printf("hell = nil\n")
+    }
 }
