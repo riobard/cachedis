@@ -2,30 +2,26 @@ package shardis
 
 import (
 	"../redis"
-	"io"
 	"crypto/sha1"
-	"log"
+	"io"
 )
-
-
-
 
 type Shardis struct {
     shards []*redis.Redis
 }
 
 
-func Open(shardsConfig []string) *Shardis {
+func Open(shardsAddr []string) *Shardis {
     c := &Shardis{}
     var r *redis.Redis
-    for _, cfg := range shardsConfig {
-        r, _ = redis.Open(cfg)
+    for _, addr := range shardsAddr {
+        r, _ = redis.Open(addr)
         c.shards = append(c.shards, r)
     }
     return c
 }
 
-func (c Shardis) pos(key string) uint16 {
+func (c Shardis) locate(key string) uint16 {
     h := sha1.New()
     io.WriteString(h, key)
     s := h.Sum(nil)
@@ -34,24 +30,35 @@ func (c Shardis) pos(key string) uint16 {
 }
 
 func (c Shardis) Set(key string, value []byte) error {
-    return c.shards[c.pos(key)].Set(key, value)
+    return c.shards[c.locate(key)].Set(key, value)
 }
 
 func (c Shardis) Get(key string) []byte {
-    return c.shards[c.pos(key)].Get(key)
+    return c.shards[c.locate(key)].Get(key)
 }
 
+
 func (c Shardis) Mget(keys... string) map[string][]byte {
-    t := make([][]string, len(c.shards))
-    var pos uint16
-    for _, k := range keys {
-        pos = c.pos(k)
-        t[pos] = append(t[pos], k)
+    if len(keys) == 0 {
+        return nil
     }
-    m := make(map[string][]byte)
+
+    t := make([][]string, len(c.shards))
+    for _, k := range keys {
+        loc := c.locate(k)
+        t[loc] = append(t[loc], k)
+    }
+
+    ch := make(chan map[string][]byte, len(c.shards))
+    for i, shard := range c.shards {
+        go func(shard *redis.Redis, keys []string) {
+            ch <- shard.Mget(keys...)
+        }(shard, t[i])
+    }
+
+    m := make(map[string][]byte, len(keys))
     for i := 0; i < len(c.shards); i++ {
-        res := c.shards[i].Mget(t[i]...)
-        log.Printf("Shard%d = %d\n", i, len(res))
+        res := <- ch
         for k, v := range res {
             m[k] = v
         }
@@ -59,28 +66,41 @@ func (c Shardis) Mget(keys... string) map[string][]byte {
     return m
 }
 
-func (c Shardis) ParaMget(keys... string) map[string][]byte {
-    t := make([][]string, len(c.shards))
-    var pos uint16
-    for _, k := range keys {
-        pos = c.pos(k)
-        t[pos] = append(t[pos], k)
-    }
-    m := make(map[string][]byte)
-    ch := make(chan map[string][]byte, len(c.shards))
-    for i, shard := range c.shards {
-        go func(i uint, shard *redis.Redis) {
-            m := shard.Mget(t[i]...)
-            ch <- m
-        }(uint(i), shard)
+
+func (c Shardis) Mset(m map[string][]byte) map[string]error {
+    if len(m) == 0 {
+        return nil
     }
 
+    t := make([][]string, len(c.shards))
+    for k, _ := range m {
+        loc := c.locate(k)
+        t[loc] = append(t[loc], k)
+    }
+
+    ch := make(chan map[string]error, len(c.shards))
+    for i, shard := range c.shards {
+        n := make(map[string][]byte, len(t[i]))
+        for _, k := range t[i] {
+            n[k] = m[k]
+        }
+
+        go func(shard *redis.Redis, n map[string][]byte) {
+            err := shard.Mset(n)
+            res := make(map[string]error, len(n))
+            for k, _ := range(n) {
+                res[k] = err
+            }
+            ch <- res
+        }(shard, n)
+    }
+
+    all := make(map[string]error, len(m))
     for i := 0; i < len(c.shards); i++ {
-        each := <- ch
-        log.Printf("Shard%d = %d\n", i, len(each))
-        for k, v := range each {
-            m[k] = v
+        res := <- ch
+        for k, v := range res {
+            all[k] = v
         }
     }
-    return m
+    return all
 }

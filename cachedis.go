@@ -11,7 +11,6 @@ import (
 var addr = flag.String("addr", "localhost:6379", "http service address")
 
 
-
 type Cachedis struct {
     shards []*redis.Redis
 }
@@ -25,7 +24,6 @@ func Open(shardsConfig []string) *Cachedis {
 func (c Cachedis) Set(key string, value []byte) error {
     return nil
 }
-
 
 
 func init() {
@@ -77,37 +75,26 @@ func main() {
         "debian2.zhq:6403",
         "debian2.zhq:6403",
     })
+
     N := 500
-    //m := make(map[string][]byte)
+    m := make(map[string][]byte, N)
 
     keys := []string{}
     for i := 0; i < N; i++ {
         k := fmt.Sprintf("uid:%d", i)
         keys = append(keys, k)
-        //v := []byte(fmt.Sprintf("%d", i))
         v := make([]byte, 40<<10)
-        //m[k] = v
-        c.Set(k, v)
-        /*
-        v := c.Get(k)
-        if false {
-            if v == nil {
-                fmt.Printf("%q = nil\n", k)
-            } else {
-                fmt.Printf("%q = %q\n", k, c.Get(k))
-            }
-        }*/
+        m[k] = v
     }
 
-    t0 := time.Now().UnixNano()
-    res1 := c.Mget(keys...)
-    td := time.Now().UnixNano() - t0
-    fmt.Printf("Mget (%d): %f\n", len(res1), float64(td)/1e6)
+    msett0 := time.Now().UnixNano()
+    msetres := c.Mset(m)
+    msettd := time.Now().UnixNano() - msett0
+    fmt.Printf("ParaMget (%d): %f\n", len(msetres), float64(msettd)/1e6)
 
-    parat0 := time.Now().UnixNano()
-    res2 := c.ParaMget(keys...)
-    paratd := time.Now().UnixNano() - parat0
-    fmt.Printf("ParaMget (%d): %f\n", len(res2), float64(paratd)/1e6)
-
+    mgett0 := time.Now().UnixNano()
+    mgetres := c.Mget(keys...)
+    mgettd := time.Now().UnixNano() - mgett0
+    fmt.Printf("ParaMget (%d): %f\n", len(mgetres), float64(mgettd)/1e6)
 
 }

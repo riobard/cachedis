@@ -4,8 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"errors"
-	"io"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"strconv"
@@ -22,9 +22,9 @@ type Redis struct {
 }
 
 type Reply struct {
-	Kind    uint8
+	Kind    byte
 	Value   []byte
-	Integer int64
+	Integer int64       // int64 value of Value
 	Values  [][]byte
 }
 
@@ -43,7 +43,7 @@ func Open(addr string) (*Redis, error) {
 }
 
 func (r Redis) Mget(keys ...string) map[string][]byte {
-	m := make(map[string][]byte)
+	m := make(map[string][]byte, len(keys))
 	if len(keys) == 0 {
 	    return m
 	}
@@ -63,7 +63,7 @@ func (r Redis) Mget(keys ...string) map[string][]byte {
 			}
 		}
 	} else {
-	    panic("wrong")
+	    panic("unexpected kind of reply")
 	}
 	return m
 }
@@ -156,16 +156,11 @@ func (r Redis) parse() *Reply {
 	case '*':
 		reply.Values = r.parseMulti()
     default:
-        buf := make([]byte, 40960 + 1000)
-        n, err := r.r.Read(buf)
-        if err != nil {
-            panic(err)
-        }
-        fmt.Printf("read byte= %d\n", n)
-        panic(fmt.Sprintf("wrong kind of reply: %q", reply.Kind))
+        panic("unexpected kind of reply")
 	}
+
 	if r.r.Buffered() != 0 {
-	    panic("Partial read")
+	    panic("more bytes in buffer")
     }
 	return reply
 }
@@ -188,12 +183,12 @@ func (r Redis) parseBulk() []byte {
         if err != nil {
             panic(err)
         }
-        if n != l + 2 {
-            panic("read too few bytes")
+        if n != l+2 {
+            panic("partial bulk read")
         }
-		if DEBUG {
-			log.Printf("Bulk actual read: %d", n)
-		}
+        if read[l] != '\r' || read[l+1] != '\n' {
+            panic("missing trailing CRLF")
+        }
 		return read[:l]
 	}
 	return nil
