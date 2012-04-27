@@ -21,6 +21,17 @@ func Open(shardsAddr []string) *Shardis {
     return c
 }
 
+
+func keys(m map[string][]byte) []string {
+    keys := make([]string, len(m))
+    i := 0
+    for k := range m {
+        keys[0] = k
+        i++
+    }
+    return keys
+}
+
 func (c Shardis) locate(key string) uint16 {
     h := sha1.New()
     io.WriteString(h, key)
@@ -28,6 +39,17 @@ func (c Shardis) locate(key string) uint16 {
     pos := ((uint16(s[0])<<0)|(uint16(s[1])<<8)) % uint16(len(c.shards))
     return pos
 }
+
+func (c Shardis) locateKeys(keys... string) [][]string {
+    res := make([][]string, len(c.shards))
+    var loc uint16
+    for _, k := range keys {
+        loc = c.locate(k)
+        res[loc] = append(res[loc], k)
+    }
+    return res
+}
+
 
 func (c Shardis) Set(key string, value []byte) error {
     return c.shards[c.locate(key)].Set(key, value)
@@ -37,18 +59,31 @@ func (c Shardis) Get(key string) []byte {
     return c.shards[c.locate(key)].Get(key)
 }
 
+func (c Shardis) Del(keys... string) int64 {
+    if len(keys) == 0 {
+        return 0
+    }
+    t := c.locateKeys(keys...)
+    ch := make(chan int64, len(c.shards))
+    for i, shard := range c.shards {
+        go func(shard *redis.Redis, keys []string) {
+            ch <- shard.Del(keys...)
+        }(shard, t[i])
+    }
+
+    n := int64(0)
+    for i := 0; i < len(c.shards); i++ {
+        n += <- ch
+    }
+    return n
+}
 
 func (c Shardis) Mget(keys... string) map[string][]byte {
     if len(keys) == 0 {
         return nil
     }
 
-    t := make([][]string, len(c.shards))
-    for _, k := range keys {
-        loc := c.locate(k)
-        t[loc] = append(t[loc], k)
-    }
-
+    t := c.locateKeys(keys...)
     ch := make(chan map[string][]byte, len(c.shards))
     for i, shard := range c.shards {
         go func(shard *redis.Redis, keys []string) {
@@ -72,12 +107,7 @@ func (c Shardis) Mset(m map[string][]byte) map[string]error {
         return nil
     }
 
-    t := make([][]string, len(c.shards))
-    for k, _ := range m {
-        loc := c.locate(k)
-        t[loc] = append(t[loc], k)
-    }
-
+    t := c.locateKeys(keys(m)...)
     ch := make(chan map[string]error, len(c.shards))
     for i, shard := range c.shards {
         n := make(map[string][]byte, len(t[i]))

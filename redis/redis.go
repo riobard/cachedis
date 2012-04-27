@@ -116,8 +116,22 @@ func (r Redis) Get(key string) []byte {
 	return reply.Value
 }
 
-
-
+func (r Redis) Del(keys... string) int64 {
+    if len(keys) == 0 {
+        return 0
+    }
+	args := make([][]byte, 1 + len(keys))
+	args[0] = []byte("DEL")
+    for i, k := range keys {
+        args[i+1] = []byte(k)
+    }
+    r.send(args...)
+	reply := r.parse()
+	if DEBUG {
+		log.Printf(">>> %d keys deleted", reply.Integer)
+	}
+	return reply.Integer
+}
 
 // Pack requests using Redis Unified Protocol
 func pack(args ...[]byte) []byte {
