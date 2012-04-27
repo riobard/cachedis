@@ -76,25 +76,24 @@ func main() {
         "debian2.zhq:6403",
     })
 
-    N := 500
+    N := 1000
     m := make(map[string][]byte, N)
 
     keys := []string{}
     for i := 0; i < N; i++ {
         k := fmt.Sprintf("uid:%d", i)
         keys = append(keys, k)
-        v := make([]byte, 40<<10)
+        v := make([]byte, 4<<10)
         m[k] = v
     }
 
     msett0 := time.Now().UnixNano()
     msetres := c.Mset(m)
     msettd := time.Now().UnixNano() - msett0
-    fmt.Printf("ParaMget (%d): %f\n", len(msetres), float64(msettd)/1e6)
+    fmt.Printf("   Mset (%d): %.3f ms\n", len(msetres), float64(msettd)/1e6)
 
     mgett0 := time.Now().UnixNano()
     mgetres := c.Mget(keys...)
     mgettd := time.Now().UnixNano() - mgett0
-    fmt.Printf("ParaMget (%d): %f\n", len(mgetres), float64(mgettd)/1e6)
-
+    fmt.Printf("   Mget (%d): %.3f ms\n", len(mgetres), float64(mgettd)/1e6)
 }
