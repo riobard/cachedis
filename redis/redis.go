@@ -24,7 +24,7 @@ type Redis struct {
 type Reply struct {
 	Kind    byte
 	Value   []byte
-	Integer int64       // int64 value of Value
+	Integer int64       // parsed integer of Reply.Value
 	Values  [][]byte
 }
 
@@ -148,14 +148,29 @@ func (r Redis) send(args ...[]byte) {
 	if DEBUG {
 		log.Printf("REQUEST> %q\n", packed)
 	}
-	r.conn.Write(packed)
+
+	// write all bytes
+	for {
+        n, err := r.conn.Write(packed)
+        if err != nil {
+            panic(err)
+        } else if n == len(packed) {
+            break
+        }
+        packed = packed[n:]
+    }
 }
 
 
 // Parse replies using Redis Unified Protocol
 func (r Redis) parse() *Reply {
 	reply := &Reply{}
-	reply.Kind, _ = r.r.ReadByte()
+    kind, err := r.r.ReadByte()
+    if err != nil {
+        panic(err)
+    }
+    reply.Kind = kind
+
 	if DEBUG {
 		log.Printf("Kind: %q", reply.Kind)
 	}
@@ -180,12 +195,35 @@ func (r Redis) parse() *Reply {
 }
 
 func (r Redis) parseLine() []byte {
-	line, _, _ := r.r.ReadLine() // trailing CRLF is removed
+    var buf bytes.Buffer
+
+	for {
+        line, isPrefix, err := r.r.ReadLine() // trailing CRLF is removed
+        if err != nil {
+            panic(err)
+        } 
+
+        for {
+            n, err := buf.Write(line)
+            if err != nil {
+                panic(err)
+            }
+            if n == len(line) {
+                break
+            }
+            line = line[n:]
+        }
+
+        if isPrefix {   // read partial line
+            continue    // continue to read more
+        }
+        break
+    }
 
 	if DEBUG {
-		log.Printf("Single Line: %q", line)
+		log.Printf("Single Line: %q", buf.Bytes())
 	}
-	return line
+	return buf.Bytes()
 }
 
 func (r Redis) parseBulk() []byte {
@@ -214,7 +252,10 @@ func (r Redis) parseMulti() [][]byte {
 	res := make([][]byte, cnt)
 	v := []byte{}
 	for j := 0; j < cnt; j++ {
-		kind, _ := r.r.ReadByte()
+		kind, err := r.r.ReadByte()
+		if err != nil {
+		    panic(err)
+		}
 		if DEBUG {
 			log.Printf("Kind: %q", kind)
 		}

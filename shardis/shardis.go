@@ -1,3 +1,5 @@
+// Redis client with sharding
+
 package shardis
 
 import (
@@ -22,6 +24,7 @@ func Open(shardsAddr []string) *Shardis {
 }
 
 
+// Get the keys of a map
 func keys(m map[string][]byte) []string {
     keys := make([]string, len(m))
     i := 0
@@ -32,6 +35,7 @@ func keys(m map[string][]byte) []string {
     return keys
 }
 
+// Locate the ID of shard containing a key
 func (c Shardis) locate(key string) uint16 {
     h := sha1.New()
     io.WriteString(h, key)
@@ -40,6 +44,7 @@ func (c Shardis) locate(key string) uint16 {
     return pos
 }
 
+// Locate the IDs of shard containting the keys
 func (c Shardis) locateKeys(keys... string) [][]string {
     res := make([][]string, len(c.shards))
     var loc uint16
@@ -110,6 +115,7 @@ func (c Shardis) Mset(m map[string][]byte) map[string]error {
     t := c.locateKeys(keys(m)...)
     ch := make(chan map[string]error, len(c.shards))
     for i, shard := range c.shards {
+        // subset of m belonging to a shard
         n := make(map[string][]byte, len(t[i]))
         for _, k := range t[i] {
             n[k] = m[k]
@@ -118,7 +124,7 @@ func (c Shardis) Mset(m map[string][]byte) map[string]error {
         go func(shard *redis.Redis, n map[string][]byte) {
             err := shard.Mset(n)
             res := make(map[string]error, len(n))
-            for k, _ := range(n) {
+            for k := range n {
                 res[k] = err
             }
             ch <- res
