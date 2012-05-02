@@ -116,7 +116,7 @@ func (r Redis) Get(key string) []byte {
 	return reply.Value
 }
 
-func (r Redis) Del(keys... string) int64 {
+func (r Redis) Del(keys... string) int {
     if len(keys) == 0 {
         return 0
     }
@@ -130,7 +130,7 @@ func (r Redis) Del(keys... string) int64 {
 	if DEBUG {
 		log.Printf(">>> %d keys deleted", reply.Integer)
 	}
-	return reply.Integer
+	return int(reply.Integer)
 }
 
 // Pack requests using Redis Unified Protocol
