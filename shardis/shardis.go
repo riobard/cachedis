@@ -13,14 +13,16 @@ type Shardis struct {
 }
 
 
-func Open(shardsAddr []string) *Shardis {
+func Open(shardsAddr []string) (*Shardis, error) {
     c := &Shardis{}
-    var r *redis.Redis
     for _, addr := range shardsAddr {
-        r, _ = redis.Open(addr)
+        r, err := redis.Open(addr)
+        if err != nil {
+            return nil, err
+        }
         c.shards = append(c.shards, r)
     }
-    return c
+    return c, nil
 }
 
 
@@ -64,19 +66,19 @@ func (c Shardis) Get(key string) []byte {
     return c.shards[c.locate(key)].Get(key)
 }
 
-func (c Shardis) Del(keys... string) int64 {
+func (c Shardis) Del(keys... string) int {
     if len(keys) == 0 {
         return 0
     }
     t := c.locateKeys(keys...)
-    ch := make(chan int64, len(c.shards))
+    ch := make(chan int, len(c.shards))
     for i, shard := range c.shards {
         go func(shard *redis.Redis, keys []string) {
             ch <- shard.Del(keys...)
         }(shard, t[i])
     }
 
-    n := int64(0)
+    n := 0
     for i := 0; i < len(c.shards); i++ {
         n += <- ch
     }
