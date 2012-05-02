@@ -4,6 +4,7 @@ import (
     "testing"
     "crypto/rand"
     "bytes"
+    "fmt"
 )
 
 
@@ -87,4 +88,67 @@ func TestDel(t *testing.T) {
     if n != len(testKeys) {
         t.Fatal("DEL less keys than expected")
     }
+}
+
+
+
+func BenchmarkMset(b *testing.B) {
+    b.StopTimer()
+
+    r, _ := Open(shards)
+    m := map[string][]byte{}
+    for i := 0; i < 1000; i++ {
+        k := fmt.Sprintf("benchmark-key-%d", i)
+        v := make([]byte, 500)
+        rand.Read(v)
+        m[k] = v
+    }
+
+    b.StartTimer()
+    for i := 0; i < b.N; i++ {
+        r.Mset(m)
+    }
+    b.StopTimer()
+}
+
+func BenchmarkMget(b *testing.B) {
+    b.StopTimer()
+
+    r, _ := Open(shards)
+    keys := make([]string, 1000)
+    for i := 0; i < 1000; i++ {
+        keys[i] = fmt.Sprintf("benchmark-key-%d", i)
+    }
+
+    b.StartTimer()
+    for i := 0; i < b.N; i++ {
+        r.Mget(keys...)
+    }
+    b.StopTimer()
+}
+
+func BenchmarkSet(b *testing.B) {
+    b.StopTimer()
+
+    r, _ := Open(shards)
+    v := make([]byte, 500)
+    rand.Read(v)
+
+    b.StartTimer()
+    for i := 0; i < b.N; i++ {
+        r.Set(fmt.Sprintf("benchmark-key-%d", i), v)
+    }
+    b.StopTimer()
+}
+
+func BenchmarkGet(b *testing.B) {
+    b.StopTimer()
+
+    r, _ := Open(shards)
+
+    b.StartTimer()
+    for i := 0; i < b.N; i++ {
+        r.Get(fmt.Sprintf("benchmark-key-%d", i))
+    }
+    b.StopTimer()
 }
