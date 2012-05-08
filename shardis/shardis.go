@@ -49,9 +49,8 @@ func (c Shardis) locate(key string) uint16 {
 // Locate the IDs of shard containting the keys
 func (c Shardis) locateKeys(keys... string) [][]string {
     res := make([][]string, len(c.shards))
-    var loc uint16
     for _, k := range keys {
-        loc = c.locate(k)
+        loc := c.locate(k)
         res[loc] = append(res[loc], k)
     }
     return res
@@ -117,20 +116,20 @@ func (c Shardis) Mset(m map[string][]byte) map[string]error {
     t := c.locateKeys(keys(m)...)
     ch := make(chan map[string]error, len(c.shards))
     for i, shard := range c.shards {
-        // subset of m belonging to a shard
-        n := make(map[string][]byte, len(t[i]))
-        for _, k := range t[i] {
-            n[k] = m[k]
-        }
+        go func(i int, shard *redis.Redis) {
+            // subset of m belonging to a shard
+            n := make(map[string][]byte, len(t[i]))
+            for _, k := range t[i] {
+                n[k] = m[k]
+            }
 
-        go func(shard *redis.Redis, n map[string][]byte) {
             err := shard.Mset(n)
             res := make(map[string]error, len(n))
             for k := range n {
                 res[k] = err
             }
             ch <- res
-        }(shard, n)
+        }(i, shard)
     }
 
     all := make(map[string]error, len(m))

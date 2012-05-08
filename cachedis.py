@@ -1,5 +1,4 @@
 from hashlib import sha1
-from time import time
 
 import redis
 
@@ -35,17 +34,11 @@ class Cachedis(object):
             d.setdefault(i, []).append(k)
 
         rs = {}
-        tt0 = time()
         for (i, ks) in d.items():
-            t0 = time()
             vs = self._conn[i].mget(ks)
             for (k, v) in zip(ks, vs):
                 if v is not None:
                     rs[k] = v
-            td = time() - t0
-            print td
-        ttd = time() - tt0
-        print ttd
         return rs
 
 
@@ -55,14 +48,6 @@ class Cachedis(object):
             i = self._pos(k)
             d.setdefault(i, {})[k] = v
 
-        
-        tt0 = time()
         for (i, m) in d.items():
-            t0 = time()
             self._conn[i].mset(m)
-            td = time() - t0
-            print i, td
-        ttd = time() - tt0
-        print ttd
-
         return True

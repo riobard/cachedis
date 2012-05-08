@@ -1,3 +1,8 @@
+/* A minimal Redis client 
+
+This client supports just the commands needed to implement bsic sharding. 
+*/
+
 package redis
 
 import (
