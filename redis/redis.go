@@ -47,10 +47,17 @@ func Open(addr string) (*Redis, error) {
 	return r, nil
 }
 
-func (r Redis) Mget(keys ...string) map[string][]byte {
-	m := make(map[string][]byte, len(keys))
+func (r Redis) Mget(keys ...string) (m map[string][]byte, err error) {
+    defer func() {
+        if e := recover(); e != nil {
+            m = nil
+            err = e.(error)
+        }
+    }()
+
+	m = make(map[string][]byte, len(keys))
 	if len(keys) == 0 {
-	    return m
+	    return m, nil
 	}
 
 	args := make([][]byte, 1+len(keys))
@@ -58,26 +65,35 @@ func (r Redis) Mget(keys ...string) map[string][]byte {
 	for i, k := range keys {
 		args[i+1] = []byte(k)
 	}
-	r.send(args...)
+	if err = r.send(args...); err != nil {
+	    return nil, err
+	}
 
 	reply := r.parse()
-	if reply.Kind == '*' {
-		for i, v := range reply.Values {
-			if v != nil {
-				m[keys[i]] = v
-			}
-		}
-	} else {
-	    panic("unexpected kind of reply")
+	if reply.Kind != '*' {
+	    return nil, errors.New("unexpected kind of reply")
 	}
-	return m
+
+    for i, v := range reply.Values {
+        if v != nil {
+            m[keys[i]] = v
+        }
+    }
+    return m, nil
 }
 
 
-func (r Redis) Mset(m map[string][]byte) error {
+func (r Redis) Mset(m map[string][]byte) (err error) {
+    defer func() {
+        if e := recover(); e != nil {
+            err = e.(error)
+        }
+    }()
+
     if len(m) == 0 {
         return nil
     }
+
 	args := make([][]byte, 1+2*len(m))
 	args[0] = []byte("MSET")
 	i := 1
@@ -85,7 +101,10 @@ func (r Redis) Mset(m map[string][]byte) error {
 		args[i], args[i+1] = []byte(k), v
 		i += 2
 	}
-	r.send(args...)
+	if err = r.send(args...); err != nil {
+	    return err
+	}
+
 	reply := r.parse()
     s := string(reply.Value)
 	if DEBUG {
@@ -97,9 +116,18 @@ func (r Redis) Mset(m map[string][]byte) error {
     return errors.New(s)
 }
 
-func (r Redis) Set(key string, value []byte) error {
+func (r Redis) Set(key string, value []byte) (err error) {
+    defer func() {
+        if e := recover(); e != nil {
+            err = e.(error)
+        }
+    }()
+
 	args := [][]byte{[]byte("SET"), []byte(key), value}
-	r.send(args...)
+	if err = r.send(args...); err != nil {
+	    return err
+	}
+
 	reply := r.parse()
 	if DEBUG {
 		log.Printf(">>>%q", reply.Value)
@@ -111,31 +139,52 @@ func (r Redis) Set(key string, value []byte) error {
     return errors.New(s)
 }
 
-func (r Redis) Get(key string) []byte {
+func (r Redis) Get(key string) (v []byte, err error) {
+    defer func() {
+        if e := recover(); e != nil {
+            v = nil
+            err = e.(error)
+        }
+    }()
+
 	args := [][]byte{[]byte("GET"), []byte(key)}
-    r.send(args...)
+    if err = r.send(args...); err != nil {
+        return nil, err
+    }
+
 	reply := r.parse()
 	if DEBUG {
 		log.Printf(">>>len = %d", len(reply.Value))
 	}
-	return reply.Value
+	return reply.Value, nil
 }
 
-func (r Redis) Del(keys... string) int {
+func (r Redis) Del(keys... string) (n int, err error) {
+    defer func() {
+        if e := recover(); e != nil {
+            n = -1
+            err = e.(error)
+        }
+    }()
+
     if len(keys) == 0 {
-        return 0
+        return 0, nil
     }
-	args := make([][]byte, 1 + len(keys))
+
+	args := make([][]byte, 1+len(keys))
 	args[0] = []byte("DEL")
     for i, k := range keys {
         args[i+1] = []byte(k)
     }
-    r.send(args...)
+    if err = r.send(args...); err != nil {
+        return -1, err
+    }
+
 	reply := r.parse()
 	if DEBUG {
 		log.Printf(">>> %d keys deleted", reply.Integer)
 	}
-	return int(reply.Integer)
+	return int(reply.Integer), nil
 }
 
 // Pack requests using Redis Unified Protocol
@@ -148,7 +197,7 @@ func pack(args ...[]byte) []byte {
 	return buf.Bytes()
 }
 
-func (r Redis) send(args ...[]byte) {
+func (r Redis) send(args ...[]byte) error {
 	packed := pack(args...)
 	if DEBUG {
 		log.Printf("REQUEST> %q\n", packed)
@@ -158,12 +207,13 @@ func (r Redis) send(args ...[]byte) {
 	for {
         n, err := r.conn.Write(packed)
         if err != nil {
-            panic(err)
+            return err
         } else if n == len(packed) {
             break
         }
         packed = packed[n:]
     }
+    return nil
 }
 
 

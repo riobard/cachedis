@@ -18,7 +18,10 @@ func TestSetGet(t *testing.T) {
     if err != nil {
         t.Fatal(err)
     }
-    v2 := r.Get("hello")
+    v2, err := r.Get("hello")
+    if err != nil {
+        t.Fatal(err)
+    }
     if bytes.Compare(v, v2) != 0 {
         t.Fatal("GET/SET different values")
     } 
@@ -43,7 +46,10 @@ func TestMsetMget(t *testing.T) {
         t.Fatal(err)
     }
 
-    m2 := r.Mget(keys...)
+    m2, err := r.Mget(keys...)
+    if err != nil {
+        t.Fatal(err)
+    }
     for k := range m {
         if bytes.Compare(m[k], m2[k]) != 0 {
             t.Fatal("MGET/MSET returned different results")
@@ -59,7 +65,10 @@ func TestDel(t *testing.T) {
     }
 
     keys := []string{"foo", "bar", "spam", "egg", "hello"}
-    n := r.Del(keys...)
+    n, err := r.Del(keys...)
+    if err != nil {
+        t.Fatal(err)
+    }
     if n != len(keys) {
         t.Fatal("DEL less keys than expected")
     }
