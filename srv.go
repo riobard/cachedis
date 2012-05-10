@@ -1,14 +1,29 @@
 package main
 
 import (
+	"./redis"
 	"net"
 	"log"
-	//"./shardis"
+	"bufio"
 )
 
 
 func process(conn net.Conn) {
-    log.Printf("Processing %q \n", conn)
+    defer func() {
+        if e := recover(); e != nil {
+            log.Printf("recovered from %q\n", e)
+        }
+    }()
+
+    r := bufio.NewReader(conn)
+    w := bufio.NewWriter(conn)
+
+    reply := redis.Parse(r)
+    log.Printf("%q", reply)
+    w.WriteString("-error\r\n")
+    w.Flush()
+
+    conn.Close()
 }
 
 func server(socktype string, addr string) {
@@ -23,6 +38,7 @@ func server(socktype string, addr string) {
         if err != nil {
             log.Printf("Error accepting: %q\n", err)
         } else {
+            log.Printf("%s connected\n", conn.RemoteAddr())
             go process(conn)
         }
     }

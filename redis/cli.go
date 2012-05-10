@@ -7,17 +7,9 @@ package redis
 
 import (
 	"bufio"
-	"bytes"
 	"errors"
-	"fmt"
-	"io"
 	"log"
 	"net"
-	"strconv"
-)
-
-var (
-	DEBUG = false
 )
 
 type Redis struct {
@@ -26,12 +18,6 @@ type Redis struct {
 	r    *bufio.Reader
 }
 
-type Reply struct {
-	Kind    byte
-	Value   []byte
-	Integer int64       // parsed integer of Reply.Value
-	Values  [][]byte
-}
 
 func Open(addr string) (*Redis, error) {
 	if addr == "" {
@@ -69,7 +55,7 @@ func (r Redis) Mget(ks ...string) (m map[string][]byte, err error) {
 	    return nil, err
 	}
 
-	reply := r.parse()
+	reply := Parse(r.r)
 	if reply.Kind != '*' {
 	    return nil, errors.New("unexpected kind of reply")
 	}
@@ -105,7 +91,7 @@ func (r Redis) Mset(m map[string][]byte) (err error) {
 	    return err
 	}
 
-	reply := r.parse()
+	reply := Parse(r.r)
     s := string(reply.Value)
 	if DEBUG {
 		log.Printf("%q\n", s)
@@ -128,7 +114,7 @@ func (r Redis) Set(k string, value []byte) (err error) {
 	    return err
 	}
 
-	reply := r.parse()
+	reply := Parse(r.r)
 	if DEBUG {
 		log.Printf(">>>%q", reply.Value)
 	}
@@ -152,7 +138,7 @@ func (r Redis) Get(k string) (v []byte, err error) {
         return nil, err
     }
 
-	reply := r.parse()
+	reply := Parse(r.r)
 	if DEBUG {
 		log.Printf(">>>len = %d", len(reply.Value))
 	}
@@ -180,21 +166,11 @@ func (r Redis) Del(ks... string) (n int, err error) {
         return -1, err
     }
 
-	reply := r.parse()
+	reply := Parse(r.r)
 	if DEBUG {
 		log.Printf(">>> %d keys deleted", reply.Integer)
 	}
 	return int(reply.Integer), nil
-}
-
-// Pack requests using Redis Unified Protocol
-func pack(args ...[]byte) []byte {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "*%d\r\n", len(args))
-	for _, arg := range args {
-		fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(arg), arg)
-	}
-	return buf.Bytes()
 }
 
 func (r Redis) send(args ...[]byte) error {
@@ -214,117 +190,4 @@ func (r Redis) send(args ...[]byte) error {
         packed = packed[n:]
     }
     return nil
-}
-
-
-// Parse replies using Redis Unified Protocol
-func (r Redis) parse() *Reply {
-	reply := &Reply{}
-    kind, err := r.r.ReadByte()
-    if err != nil {
-        panic(err)
-    }
-    reply.Kind = kind
-
-	if DEBUG {
-		log.Printf("Kind: %q", reply.Kind)
-	}
-	switch reply.Kind {
-	case '+', '-', ':':
-		reply.Value = r.parseLine()
-		if reply.Kind == ':' { // Integer reply
-			reply.Integer, _ = strconv.ParseInt(string(reply.Value), 10, 64)
-		}
-	case '$':
-		reply.Value = r.parseBulk()
-	case '*':
-		reply.Values = r.parseMulti()
-    default:
-        panic("unexpected kind of reply")
-	}
-
-	if r.r.Buffered() != 0 {
-	    panic("more bytes in buffer")
-    }
-	return reply
-}
-
-func (r Redis) parseLine() []byte {
-    var buf bytes.Buffer
-
-	for {
-        line, isPrefix, err := r.r.ReadLine() // trailing CRLF is removed
-        if err != nil {
-            panic(err)
-        } 
-
-        for {
-            n, err := buf.Write(line)
-            if err != nil {
-                panic(err)
-            }
-            if n == len(line) {
-                break
-            }
-            line = line[n:]
-        }
-
-        if isPrefix {   // read partial line
-            continue    // continue to read more
-        }
-        break
-    }
-
-	if DEBUG {
-		log.Printf("Single Line: %q", buf.Bytes())
-	}
-	return buf.Bytes()
-}
-
-func (r Redis) parseBulk() []byte {
-	line := r.parseLine()
-	l, _ := strconv.Atoi(string(line))
-	if l >= 0 {
-		read := make([]byte, l+2) // trailing CRLF
-        n, err := io.ReadFull(r.r, read)
-        if err != nil {
-            panic(err)
-        }
-        if n != l+2 {
-            panic("partial bulk read")
-        }
-        if read[l] != '\r' || read[l+1] != '\n' {
-            panic("missing trailing CRLF")
-        }
-		return read[:l]
-	}
-	return nil
-}
-
-func (r Redis) parseMulti() [][]byte {
-	line := r.parseLine()
-	cnt, _ := strconv.Atoi(string(line))
-	res := make([][]byte, cnt)
-	v := []byte{}
-	for j := 0; j < cnt; j++ {
-		kind, err := r.r.ReadByte()
-		if err != nil {
-		    panic(err)
-		}
-		if DEBUG {
-			log.Printf("Kind: %q", kind)
-		}
-		if kind == '$' {
-			v = r.parseBulk()
-			res[j] = v
-			if DEBUG {
-				if v == nil {
-					log.Printf("parseBulk> result nil")
-				} else {
-					log.Printf("parseBulk> result len(%d)", len(v))
-				}
-			}
-		}
-	}
-	return res
 }
