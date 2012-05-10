@@ -28,28 +28,28 @@ func Open(shardsAddr []string) (*Shardis, error) {
 
 // Get the keys of a map
 func keys(m map[string][]byte) []string {
-    keys := make([]string, len(m))
+    ks := make([]string, len(m))
     i := 0
     for k := range m {
-        keys[i] = k
+        ks[i] = k
         i++
     }
-    return keys
+    return ks
 }
 
 // Locate the ID of shard containing a key
-func (c Shardis) locate(key string) uint16 {
+func (c Shardis) locate(k string) uint16 {
     h := sha1.New()
-    io.WriteString(h, key)
+    io.WriteString(h, k)
     s := h.Sum(nil)
     pos := ((uint16(s[0])<<0)|(uint16(s[1])<<8)) % uint16(len(c.shards))
     return pos
 }
 
 // Locate the IDs of shard containting the keys
-func (c Shardis) locateKeys(keys... string) [][]string {
+func (c Shardis) locateKeys(ks... string) [][]string {
     res := make([][]string, len(c.shards))
-    for _, k := range keys {
+    for _, k := range ks {
         loc := c.locate(k)
         res[loc] = append(res[loc], k)
     }
@@ -57,54 +57,68 @@ func (c Shardis) locateKeys(keys... string) [][]string {
 }
 
 
-func (c Shardis) Set(key string, value []byte) error {
-    return c.shards[c.locate(key)].Set(key, value)
+func (c Shardis) Set(k string, v []byte) error {
+    return c.shards[c.locate(k)].Set(k, v)
 }
 
-func (c Shardis) Get(key string) []byte {
-    return c.shards[c.locate(key)].Get(key)
+func (c Shardis) Get(k string) ([]byte, error) {
+    return c.shards[c.locate(k)].Get(k)
 }
 
-func (c Shardis) Del(keys... string) int {
-    if len(keys) == 0 {
-        return 0
+type intErrorPair struct {
+    n int
+    err error
+}
+
+func (c Shardis) Del(ks... string) (n int, err error) {
+    if len(ks) == 0 {
+        return 0, nil
     }
-    t := c.locateKeys(keys...)
-    ch := make(chan int, len(c.shards))
+    t := c.locateKeys(ks...)
+    ch := make(chan intErrorPair, len(c.shards))
     for i, shard := range c.shards {
-        go func(shard *redis.Redis, keys []string) {
-            ch <- shard.Del(keys...)
+        go func(shard *redis.Redis, ks []string) {
+            n, err := shard.Del(ks...)
+            ch <- intErrorPair{n, err}
         }(shard, t[i])
     }
 
-    n := 0
     for i := 0; i < len(c.shards); i++ {
-        n += <- ch
+        pair := <- ch
+        n += pair.n
+        err = pair.err
     }
-    return n
+    return n, err
 }
 
-func (c Shardis) Mget(keys... string) map[string][]byte {
-    if len(keys) == 0 {
-        return nil
+type mapErrorPair struct {
+    m map[string][]byte
+    err error
+}
+
+func (c Shardis) Mget(ks... string) (m map[string][]byte, err error) {
+    if len(ks) == 0 {
+        return m, nil
     }
 
-    t := c.locateKeys(keys...)
-    ch := make(chan map[string][]byte, len(c.shards))
+    t := c.locateKeys(ks...)
+    ch := make(chan mapErrorPair, len(c.shards))
     for i, shard := range c.shards {
-        go func(shard *redis.Redis, keys []string) {
-            ch <- shard.Mget(keys...)
+        go func(shard *redis.Redis, ks []string) {
+            m, err := shard.Mget(ks...)
+            ch <- mapErrorPair{m, err}
         }(shard, t[i])
     }
 
-    m := make(map[string][]byte, len(keys))
+    m = make(map[string][]byte, len(ks))
     for i := 0; i < len(c.shards); i++ {
-        res := <- ch
-        for k, v := range res {
+        pair := <- ch
+        for k, v := range pair.m {
             m[k] = v
         }
+        err = pair.err
     }
-    return m
+    return m, err
 }
 
 

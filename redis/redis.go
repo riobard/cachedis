@@ -47,7 +47,7 @@ func Open(addr string) (*Redis, error) {
 	return r, nil
 }
 
-func (r Redis) Mget(keys ...string) (m map[string][]byte, err error) {
+func (r Redis) Mget(ks ...string) (m map[string][]byte, err error) {
     defer func() {
         if e := recover(); e != nil {
             m = nil
@@ -55,14 +55,14 @@ func (r Redis) Mget(keys ...string) (m map[string][]byte, err error) {
         }
     }()
 
-	m = make(map[string][]byte, len(keys))
-	if len(keys) == 0 {
+	m = make(map[string][]byte, len(ks))
+	if len(ks) == 0 {
 	    return m, nil
 	}
 
-	args := make([][]byte, 1+len(keys))
+	args := make([][]byte, 1+len(ks))
 	args[0] = []byte("MGET")
-	for i, k := range keys {
+	for i, k := range ks {
 		args[i+1] = []byte(k)
 	}
 	if err = r.send(args...); err != nil {
@@ -76,7 +76,7 @@ func (r Redis) Mget(keys ...string) (m map[string][]byte, err error) {
 
     for i, v := range reply.Values {
         if v != nil {
-            m[keys[i]] = v
+            m[ks[i]] = v
         }
     }
     return m, nil
@@ -116,14 +116,14 @@ func (r Redis) Mset(m map[string][]byte) (err error) {
     return errors.New(s)
 }
 
-func (r Redis) Set(key string, value []byte) (err error) {
+func (r Redis) Set(k string, value []byte) (err error) {
     defer func() {
         if e := recover(); e != nil {
             err = e.(error)
         }
     }()
 
-	args := [][]byte{[]byte("SET"), []byte(key), value}
+	args := [][]byte{[]byte("SET"), []byte(k), value}
 	if err = r.send(args...); err != nil {
 	    return err
 	}
@@ -139,7 +139,7 @@ func (r Redis) Set(key string, value []byte) (err error) {
     return errors.New(s)
 }
 
-func (r Redis) Get(key string) (v []byte, err error) {
+func (r Redis) Get(k string) (v []byte, err error) {
     defer func() {
         if e := recover(); e != nil {
             v = nil
@@ -147,7 +147,7 @@ func (r Redis) Get(key string) (v []byte, err error) {
         }
     }()
 
-	args := [][]byte{[]byte("GET"), []byte(key)}
+	args := [][]byte{[]byte("GET"), []byte(k)}
     if err = r.send(args...); err != nil {
         return nil, err
     }
@@ -159,7 +159,7 @@ func (r Redis) Get(key string) (v []byte, err error) {
 	return reply.Value, nil
 }
 
-func (r Redis) Del(keys... string) (n int, err error) {
+func (r Redis) Del(ks... string) (n int, err error) {
     defer func() {
         if e := recover(); e != nil {
             n = -1
@@ -167,13 +167,13 @@ func (r Redis) Del(keys... string) (n int, err error) {
         }
     }()
 
-    if len(keys) == 0 {
+    if len(ks) == 0 {
         return 0, nil
     }
 
-	args := make([][]byte, 1+len(keys))
+	args := make([][]byte, 1+len(ks))
 	args[0] = []byte("DEL")
-    for i, k := range keys {
+    for i, k := range ks {
         args[i+1] = []byte(k)
     }
     if err = r.send(args...); err != nil {
