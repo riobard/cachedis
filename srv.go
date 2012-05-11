@@ -27,6 +27,21 @@ func ProxyOpen(shards ...string) (*Proxy, error) {
         "localhost:6379",
         "localhost:6379",
         "localhost:6379",
+
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
     )
     if err != nil {
         return nil, err
