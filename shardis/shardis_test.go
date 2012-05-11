@@ -30,7 +30,7 @@ var testKeys = []string{
 
 
 func TestSetGet(t *testing.T) {
-    r, err := Open(shards)
+    r, err := Open(shards...)
     if err != nil {
         t.Fatal(err)
     }
@@ -53,7 +53,7 @@ func TestSetGet(t *testing.T) {
 
 
 func TestMsetMget(t *testing.T) {
-    r, err := Open(shards)
+    r, err := Open(shards...)
     if err != nil {
         t.Fatal(err)
     }
@@ -85,7 +85,7 @@ func TestMsetMget(t *testing.T) {
 
 
 func TestDel(t *testing.T) {
-    r, err := Open(shards)
+    r, err := Open(shards...)
     if err != nil {
         t.Fatal(err)
     }
@@ -104,7 +104,7 @@ func TestDel(t *testing.T) {
 func BenchmarkMset(b *testing.B) {
     b.StopTimer()
 
-    r, _ := Open(shards)
+    r, _ := Open(shards...)
     m := map[string][]byte{}
     for i := 0; i < 1000; i++ {
         k := fmt.Sprintf("benchmark-key-%d", i)
@@ -123,7 +123,7 @@ func BenchmarkMset(b *testing.B) {
 func BenchmarkMget(b *testing.B) {
     b.StopTimer()
 
-    r, _ := Open(shards)
+    r, _ := Open(shards...)
     keys := make([]string, 1000)
     for i := 0; i < 1000; i++ {
         keys[i] = fmt.Sprintf("benchmark-key-%d", i)
@@ -139,7 +139,7 @@ func BenchmarkMget(b *testing.B) {
 func BenchmarkSet(b *testing.B) {
     b.StopTimer()
 
-    r, _ := Open(shards)
+    r, _ := Open(shards...)
     v := make([]byte, 500)
     rand.Read(v)
 
@@ -153,7 +153,7 @@ func BenchmarkSet(b *testing.B) {
 func BenchmarkGet(b *testing.B) {
     b.StopTimer()
 
-    r, _ := Open(shards)
+    r, _ := Open(shards...)
 
     b.StartTimer()
     for i := 0; i < b.N; i++ {

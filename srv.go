@@ -2,13 +2,102 @@ package main
 
 import (
 	"./redis"
+	"./shardis"
 	"net"
 	"log"
 	"bufio"
 )
 
 
-func process(conn net.Conn) {
+var (
+    E_INCOMPLETE  = []byte("Incomplete request")
+    E_UNSUPPORTED = []byte("Unsupported request")
+)
+
+
+type Proxy struct {
+    s *shardis.Shardis
+}
+
+
+func ProxyOpen(shards ...string) (*Proxy, error) {
+    s, err := shardis.Open(
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+    )
+    if err != nil {
+        return nil, err
+    }
+    return &Proxy{s: s}, nil
+
+}
+
+
+func (p Proxy) proxy(req *redis.Message) (rsp *redis.Message) {
+    rsp = &redis.Message{}
+
+    if req.Kind == '*' {
+        if len(req.Values) > 1 {
+            switch string(req.Values[0]) {
+            case "GET":
+                p.proxyGet(req, rsp)
+            case "SET":
+                p.proxySet(req, rsp)
+            case "DEL":
+                p.proxyDel(req, rsp)
+            default:
+                rsp.Kind = '-'
+                rsp.Value = E_UNSUPPORTED
+            }
+        } else {
+            rsp.Kind = '-'
+            rsp.Value = E_INCOMPLETE
+        }
+    } else {
+        rsp.Kind = '-'
+        rsp.Value = E_UNSUPPORTED
+    }
+
+    return rsp
+}
+
+
+func (p Proxy) proxyGet(req, rsp *redis.Message) {
+    b, _ := p.s.Get(string(req.Values[1]))
+    rsp.Kind = '$'
+    rsp.Value = b
+}
+
+func (p Proxy) proxySet(req, rsp *redis.Message) {
+    if len(req.Values) > 2 {
+        err := p.s.Set(string(req.Values[1]), req.Values[2])
+        if err == nil {
+            rsp.Kind = '+'
+            rsp.Value = []byte("OK")
+        } else {
+            rsp.Kind = '-'
+            rsp.Value = []byte(err.Error())
+        }
+    } else {
+        rsp.Kind = '-'
+        rsp.Value = E_INCOMPLETE
+    }
+}
+
+func (p Proxy) proxyDel(req, rsp *redis.Message) {
+    ks := make([]string, len(req.Values))
+    for i, v := range req.Values {
+        ks[i] = string(v)
+    }
+    n, _ := p.s.Del(ks[1:]...)
+    rsp.Kind = ':'
+    rsp.Integer = int64(n)
+}
+
+
+func (p Proxy) process(conn net.Conn) {
     defer func() {
         if e := recover(); e != nil {
             log.Printf("recovered from %q\n", e)
@@ -18,17 +107,18 @@ func process(conn net.Conn) {
     r := bufio.NewReader(conn)
     w := bufio.NewWriter(conn)
 
-    req, err := redis.Parse(r)
-    if err != nil {
-        log.Printf("err: %q\n", err)
-        return
-    } 
+    for {
+        req, err := redis.Parse(r)
+        if err != nil {
+            log.Printf("%s disconnected: %s\n", conn.RemoteAddr(), err)
+            break
+        } 
 
-    log.Printf("%q\n", req)
-    //w.WriteString("$3\r\nbar\r\n")
-    w.WriteString("$0\r\n")
-    w.Flush()
-
+        reply := p.proxy(req)
+        rs, _ := redis.Encode(reply)
+        w.Write(rs)
+        w.Flush()
+    }
     conn.Close()
 }
 
@@ -39,13 +129,20 @@ func server(socktype string, addr string) {
     }
     log.Printf("Listening on %s://%s\n", socktype, addr)
 
+    proxy, err := ProxyOpen(
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+        "localhost:6379",
+    )
+
     for {
         conn, err := l.Accept()
         if err != nil {
             log.Printf("Error accepting: %q\n", err)
         } else {
             log.Printf("%s connected\n", conn.RemoteAddr())
-            go process(conn)
+            go proxy.process(conn)
         }
     }
 }

@@ -13,7 +13,7 @@ type Shardis struct {
 }
 
 
-func Open(shardsAddr []string) (*Shardis, error) {
+func Open(shardsAddr ...string) (*Shardis, error) {
     c := &Shardis{}
     for _, addr := range shardsAddr {
         r, err := redis.Open(addr)

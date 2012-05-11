@@ -25,8 +25,10 @@ func Encode(m *Message) ([]byte, error) {
     var buf bytes.Buffer
 
     switch m.Kind {
-    case '+', '-', ':':
+    case '+', '-':
         fmt.Fprintf(&buf, "%c%s\r\n", m.Kind, m.Value)
+    case ':':
+        fmt.Fprintf(&buf, ":%d\r\n", m.Integer)
     case '$':
         if m.Value == nil {
             fmt.Fprintf(&buf, "$-1\r\n")
