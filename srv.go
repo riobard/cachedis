@@ -12,6 +12,7 @@ import (
 var (
     E_INCOMPLETE  = []byte("Incomplete request")
     E_UNSUPPORTED = []byte("Unsupported request")
+    E_PROXY       = []byte("Proxy error")
 )
 
 
@@ -47,6 +48,10 @@ func (p Proxy) proxy(req *redis.Message) (rsp *redis.Message) {
                 p.proxySet(req, rsp)
             case "DEL":
                 p.proxyDel(req, rsp)
+            case "MGET":
+                p.proxyMget(req, rsp)
+            case "MSET":
+                p.proxyMset(req, rsp)
             default:
                 rsp.Kind = '-'
                 rsp.Value = E_UNSUPPORTED
@@ -87,15 +92,61 @@ func (p Proxy) proxySet(req, rsp *redis.Message) {
 }
 
 func (p Proxy) proxyDel(req, rsp *redis.Message) {
-    ks := make([]string, len(req.Values))
-    for i, v := range req.Values {
+    ks := make([]string, len(req.Values[1:]))
+    for i, v := range req.Values[1:] {
         ks[i] = string(v)
     }
-    n, _ := p.s.Del(ks[1:]...)
+    n, _ := p.s.Del(ks...)
     rsp.Kind = ':'
     rsp.Integer = int64(n)
 }
 
+func (p Proxy) proxyMget(req, rsp *redis.Message) {
+    ks := make([]string, len(req.Values[1:]))
+    for i, v := range req.Values[1:] {
+        ks[i] = string(v)
+    }
+    m, err := p.s.Mget(ks...)
+
+    if err != nil {
+        rsp.Kind = '-'
+        rsp.Value = E_PROXY
+    } else {
+        rsp.Kind = '*'
+        rsp.Values = make([][]byte, len(ks))
+        for i, k := range ks {
+            rsp.Values[i] = m[k]
+        }
+    }
+}
+
+func (p Proxy) proxyMset(req, rsp *redis.Message) {
+    n := len(req.Values[1:])/2
+    ks := make([]string, n)
+    vs := make([][]byte, n)
+    for i, v := range req.Values[1:] {
+        if i % 2 == 0 {
+            ks[i/2] = string(v)
+        } else {
+            vs[i/2] = v
+        }
+    }
+    kvm := make(map[string][]byte, n)
+    for i := 0; i < n; i++ {
+        kvm[string(ks[i])] = vs[i]
+    }
+
+    m := p.s.Mset(kvm)
+    for _, err := range m {
+        if err != nil {
+            rsp.Kind = '-'
+            rsp.Value = []byte("MSET failed")
+            return
+        }
+    }
+    rsp.Kind = '+'
+    rsp.Value = []byte("OK")
+}
 
 func (p Proxy) process(conn net.Conn) {
     defer func() {
