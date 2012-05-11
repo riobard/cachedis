@@ -18,9 +18,15 @@ func process(conn net.Conn) {
     r := bufio.NewReader(conn)
     w := bufio.NewWriter(conn)
 
-    reply := redis.Parse(r)
-    log.Printf("%q", reply)
-    w.WriteString("-error\r\n")
+    req, err := redis.Parse(r)
+    if err != nil {
+        log.Printf("err: %q\n", err)
+        return
+    } 
+
+    log.Printf("%q\n", req)
+    //w.WriteString("$3\r\nbar\r\n")
+    w.WriteString("$0\r\n")
     w.Flush()
 
     conn.Close()

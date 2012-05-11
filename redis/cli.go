@@ -34,13 +34,6 @@ func Open(addr string) (*Redis, error) {
 }
 
 func (r Redis) Mget(ks ...string) (m map[string][]byte, err error) {
-    defer func() {
-        if e := recover(); e != nil {
-            m = nil
-            err = e.(error)
-        }
-    }()
-
 	m = make(map[string][]byte, len(ks))
 	if len(ks) == 0 {
 	    return m, nil
@@ -55,12 +48,15 @@ func (r Redis) Mget(ks ...string) (m map[string][]byte, err error) {
 	    return nil, err
 	}
 
-	reply := Parse(r.r)
-	if reply.Kind != '*' {
-	    return nil, errors.New("unexpected kind of reply")
+	msg, err := Parse(r.r)
+	if err != nil {
+	    return nil, err
+	}
+	if msg.Kind != '*' {
+	    return nil, errors.New("unexpected kind of msg")
 	}
 
-    for i, v := range reply.Values {
+    for i, v := range msg.Values {
         if v != nil {
             m[ks[i]] = v
         }
@@ -70,12 +66,6 @@ func (r Redis) Mget(ks ...string) (m map[string][]byte, err error) {
 
 
 func (r Redis) Mset(m map[string][]byte) (err error) {
-    defer func() {
-        if e := recover(); e != nil {
-            err = e.(error)
-        }
-    }()
-
     if len(m) == 0 {
         return nil
     }
@@ -91,8 +81,12 @@ func (r Redis) Mset(m map[string][]byte) (err error) {
 	    return err
 	}
 
-	reply := Parse(r.r)
-    s := string(reply.Value)
+	msg, err := Parse(r.r)
+	if err != nil {
+	    return err
+	}
+
+    s := string(msg.Value)
 	if DEBUG {
 		log.Printf("%q\n", s)
 	}
@@ -103,22 +97,21 @@ func (r Redis) Mset(m map[string][]byte) (err error) {
 }
 
 func (r Redis) Set(k string, value []byte) (err error) {
-    defer func() {
-        if e := recover(); e != nil {
-            err = e.(error)
-        }
-    }()
-
 	args := [][]byte{[]byte("SET"), []byte(k), value}
 	if err = r.send(args...); err != nil {
 	    return err
 	}
 
-	reply := Parse(r.r)
-	if DEBUG {
-		log.Printf(">>>%q", reply.Value)
+	msg, err := Parse(r.r)
+	if err != nil {
+	    return err
 	}
-    s := string(reply.Value)
+
+	if DEBUG {
+		log.Printf(">>>%q", msg.Value)
+	}
+
+    s := string(msg.Value)
 	if s == "OK" {
         return nil
 	}
@@ -126,33 +119,24 @@ func (r Redis) Set(k string, value []byte) (err error) {
 }
 
 func (r Redis) Get(k string) (v []byte, err error) {
-    defer func() {
-        if e := recover(); e != nil {
-            v = nil
-            err = e.(error)
-        }
-    }()
-
 	args := [][]byte{[]byte("GET"), []byte(k)}
     if err = r.send(args...); err != nil {
         return nil, err
     }
 
-	reply := Parse(r.r)
-	if DEBUG {
-		log.Printf(">>>len = %d", len(reply.Value))
+	msg, err := Parse(r.r)
+	if err != nil {
+	    return nil, err
 	}
-	return reply.Value, nil
+
+	if DEBUG {
+		log.Printf(">>>len = %d", len(msg.Value))
+	}
+
+	return msg.Value, nil
 }
 
 func (r Redis) Del(ks... string) (n int, err error) {
-    defer func() {
-        if e := recover(); e != nil {
-            n = -1
-            err = e.(error)
-        }
-    }()
-
     if len(ks) == 0 {
         return 0, nil
     }
@@ -162,32 +146,40 @@ func (r Redis) Del(ks... string) (n int, err error) {
     for i, k := range ks {
         args[i+1] = []byte(k)
     }
+
     if err = r.send(args...); err != nil {
         return -1, err
     }
 
-	reply := Parse(r.r)
-	if DEBUG {
-		log.Printf(">>> %d keys deleted", reply.Integer)
+	msg, err := Parse(r.r)
+	if err != nil {
+	    return -1, err
 	}
-	return int(reply.Integer), nil
+
+	if DEBUG {
+		log.Printf(">>> %d keys deleted", msg.Integer)
+	}
+
+	return int(msg.Integer), nil
 }
 
 func (r Redis) send(args ...[]byte) error {
-	packed := pack(args...)
+    m := &Message{Kind: '*', Values: args}
+    b, err := Encode(m)
+    if err != nil {
+        return err
+    }
+
 	if DEBUG {
-		log.Printf("REQUEST> %q\n", packed)
+		log.Printf("REQUEST> %q\n", b)
 	}
 
-	// write all bytes
-	for {
-        n, err := r.conn.Write(packed)
+	for len(b) > 0 {
+        n, err := r.conn.Write(b)
         if err != nil {
             return err
-        } else if n == len(packed) {
-            break
         }
-        packed = packed[n:]
+        b = b[n:]
     }
     return nil
 }

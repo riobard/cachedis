@@ -14,53 +14,76 @@ var (
 	DEBUG = false
 )
 
-type Reply struct {
+type Message struct {
 	Kind    byte
 	Value   []byte
-	Integer int64       // parsed integer of Reply.Value
+	Integer int64       // parsed integer of msg.Value
 	Values  [][]byte
 }
 
-// Pack requests using Redis Unified Protocol
-func pack(args ...[]byte) []byte {
-	var buf bytes.Buffer
-	fmt.Fprintf(&buf, "*%d\r\n", len(args))
-	for _, arg := range args {
-		fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(arg), arg)
-	}
-	return buf.Bytes()
+func Encode(m *Message) ([]byte, error) {
+    var buf bytes.Buffer
+
+    switch m.Kind {
+    case '+', '-', ':':
+        fmt.Fprintf(&buf, "%c%s\r\n", m.Kind, m.Value)
+    case '$':
+        fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(m.Value), m.Value)
+    case '*':
+        fmt.Fprintf(&buf, "*%d\r\n", len(m.Values))
+        for _, v := range m.Values {
+            fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(v), v)
+        }
+    default:
+        return nil, errors.New("unexpected message type")
+    }
+
+    return buf.Bytes(), nil
 }
 
+
 // Redis unified protocol parser
-func Parse(r *bufio.Reader) *Reply {
-	reply := &Reply{}
+func Parse(r *bufio.Reader) (m *Message, err error) {
+    defer func() {
+        if e := recover(); e != nil {
+            m = nil
+            err = e.(error)
+        }
+    }()
+
+	m = &Message{}
+
     kind, err := r.ReadByte()
     if err != nil {
         panic(err)
     }
-    reply.Kind = kind
+
+    m.Kind = kind
 
 	if DEBUG {
-		log.Printf("Kind: %q", reply.Kind)
+		log.Printf("Kind: %q", m.Kind)
 	}
-	switch reply.Kind {
+	switch m.Kind {
 	case '+', '-', ':':
-		reply.Value = parseLine(r)
-		if reply.Kind == ':' { // Integer reply
-			reply.Integer, _ = strconv.ParseInt(string(reply.Value), 10, 64)
+		m.Value = parseLine(r)
+		if m.Kind == ':' { // Integer msg
+			m.Integer, err = strconv.ParseInt(string(m.Value), 10, 64)
+			if err != nil {
+			    panic(err)
+			}
 		}
 	case '$':
-		reply.Value = parseBulk(r)
+		m.Value = parseBulk(r)
 	case '*':
-		reply.Values = parseMulti(r)
+		m.Values = parseMulti(r)
     default:
-        panic(errors.New("unexpected kind of reply"))
+        panic(errors.New("unexpected kind of msg"))
 	}
 
 	if r.Buffered() != 0 {
 	    panic(errors.New("Unconsumed bytes in buffer"))
     }
-	return reply
+	return m, nil
 }
 
 func parseLine(r *bufio.Reader) []byte {
@@ -72,21 +95,16 @@ func parseLine(r *bufio.Reader) []byte {
             panic(err)
         } 
 
-        for {
+        for len(line) > 0 {
             n, err := buf.Write(line)
             if err != nil {
                 panic(err)
             }
-            if n == len(line) {
-                break
-            }
             line = line[n:]
         }
-
-        if isPrefix {   // read partial line
-            continue    // continue to read more
+        if !isPrefix {  // whole line is read
+            break
         }
-        break
     }
 
 	if DEBUG {
@@ -117,7 +135,10 @@ func parseBulk(r *bufio.Reader) []byte {
 
 func parseMulti(r *bufio.Reader) [][]byte {
 	line := parseLine(r)
-	cnt, _ := strconv.Atoi(string(line))
+	cnt, err := strconv.Atoi(string(line))
+	if err != nil {
+	    panic(err)
+	}
 	res := make([][]byte, cnt)
 	v := []byte{}
 	for j := 0; j < cnt; j++ {
