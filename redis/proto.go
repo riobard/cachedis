@@ -28,11 +28,19 @@ func Encode(m *Message) ([]byte, error) {
     case '+', '-', ':':
         fmt.Fprintf(&buf, "%c%s\r\n", m.Kind, m.Value)
     case '$':
-        fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(m.Value), m.Value)
+        if m.Value == nil {
+            fmt.Fprintf(&buf, "$-1\r\n")
+        } else {
+            fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(m.Value), m.Value)
+        }
     case '*':
         fmt.Fprintf(&buf, "*%d\r\n", len(m.Values))
         for _, v := range m.Values {
-            fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(v), v)
+            if v == nil {
+                fmt.Fprintf(&buf, "$-1\r\n")
+            } else {
+                fmt.Fprintf(&buf, "$%d\r\n%s\r\n", len(v), v)
+            }
         }
     default:
         return nil, errors.New("unexpected message type")
