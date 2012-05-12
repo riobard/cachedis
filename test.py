@@ -29,7 +29,7 @@ shards = [
 ]
 
 
-d = dict( ("uid:%d" % i, hashlib.sha1("uid:%d" % i).hexdigest() * 500) for i in xrange(4000) )
+d = dict( ("uid:%d" % i, hashlib.sha1("uid:%d" % i).hexdigest() * 5000) for i in xrange(4000) )
 cli = Cachedis(shards)
 
 t0 = time()
