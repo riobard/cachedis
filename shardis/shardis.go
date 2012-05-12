@@ -5,7 +5,6 @@ package shardis
 import (
 	"../redis"
 	"crypto/sha1"
-	"io"
 )
 
 type Shardis struct {
@@ -26,29 +25,24 @@ func Open(shardsAddr ...string) (*Shardis, error) {
 }
 
 
-// Get the keys of a map
-func keys(m map[string][]byte) []string {
-    ks := make([]string, len(m))
-    i := 0
-    for k := range m {
-        ks[i] = k
-        i++
-    }
-    return ks
-}
-
 // Locate the ID of shard containing a key
-func (c Shardis) locate(k string) uint16 {
+func (c Shardis) locate(k []byte) uint16 {
     h := sha1.New()
-    io.WriteString(h, k)
+    for len(k) > 0 {
+        n, err := h.Write(k)
+        if err != nil {
+            panic(err)
+        }
+        k = k[n:]
+    }
     s := h.Sum(nil)
     pos := ((uint16(s[0])<<0)|(uint16(s[1])<<8)) % uint16(len(c.shards))
     return pos
 }
 
 // Locate the IDs of shard containting the keys
-func (c Shardis) locateKeys(ks... string) [][]string {
-    res := make([][]string, len(c.shards))
+func (c Shardis) locateKeys(ks ...[]byte) [][][]byte {
+    res := make([][][]byte, len(c.shards))
     for _, k := range ks {
         loc := c.locate(k)
         res[loc] = append(res[loc], k)
@@ -56,12 +50,21 @@ func (c Shardis) locateKeys(ks... string) [][]string {
     return res
 }
 
+func (c Shardis) locatePairs(ps ...redis.KVPair) [][]redis.KVPair {
+    res := make([][]redis.KVPair, len(c.shards))
+    for _, p := range ps {
+        loc := c.locate(p.K)
+        res[loc] = append(res[loc], p)
+    }
+    return res
+}
 
-func (c Shardis) Set(k string, v []byte) error {
+
+func (c Shardis) Set(k, v []byte) error {
     return c.shards[c.locate(k)].Set(k, v)
 }
 
-func (c Shardis) Get(k string) ([]byte, error) {
+func (c Shardis) Get(k []byte) ([]byte, error) {
     return c.shards[c.locate(k)].Get(k)
 }
 
@@ -70,14 +73,14 @@ type intErrorPair struct {
     err error
 }
 
-func (c Shardis) Del(ks... string) (n int, err error) {
+func (c Shardis) Del(ks ...[]byte) (n int, err error) {
     if len(ks) == 0 {
         return 0, nil
     }
     t := c.locateKeys(ks...)
     ch := make(chan intErrorPair, len(c.shards))
     for i, shard := range c.shards {
-        go func(shard *redis.Redis, ks []string) {
+        go func(shard *redis.Redis, ks [][]byte) {
             n, err := shard.Del(ks...)
             ch <- intErrorPair{n, err}
         }(shard, t[i])
@@ -91,67 +94,67 @@ func (c Shardis) Del(ks... string) (n int, err error) {
     return n, err
 }
 
-type mapErrorPair struct {
-    m map[string][]byte
-    err error
-}
 
-func (c Shardis) Mget(ks... string) (m map[string][]byte, err error) {
+func (c Shardis) Mget(ks ...[]byte) []redis.KVPair {
     if len(ks) == 0 {
-        return m, nil
-    }
-
-    t := c.locateKeys(ks...)
-    ch := make(chan mapErrorPair, len(c.shards))
-    for i, shard := range c.shards {
-        go func(shard *redis.Redis, ks []string) {
-            m, err := shard.Mget(ks...)
-            ch <- mapErrorPair{m, err}
-        }(shard, t[i])
-    }
-
-    m = make(map[string][]byte, len(ks))
-    for i := 0; i < len(c.shards); i++ {
-        pair := <- ch
-        for k, v := range pair.m {
-            m[k] = v
-        }
-        err = pair.err
-    }
-    return m, err
-}
-
-
-func (c Shardis) Mset(m map[string][]byte) map[string]error {
-    if len(m) == 0 {
         return nil
     }
 
-    t := c.locateKeys(keys(m)...)
-    ch := make(chan map[string]error, len(c.shards))
+    t := c.locateKeys(ks...)
+    ch := make(chan []redis.KVPair, len(c.shards))
     for i, shard := range c.shards {
-        go func(i int, shard *redis.Redis) {
-            // subset of m belonging to a shard
-            n := make(map[string][]byte, len(t[i]))
-            for _, k := range t[i] {
-                n[k] = m[k]
+        go func(shard *redis.Redis, ks [][]byte) {
+            vs, err := shard.Mget(ks...)
+            if err == nil {
+                ps := make([]redis.KVPair, len(ks))
+                for i, k := range ks {
+                    ps[i].K = k
+                    ps[i].V = vs[i]
+                }
+                ch <- ps
+            } else {
+                ch <- nil
             }
-
-            err := shard.Mset(n)
-            res := make(map[string]error, len(n))
-            for k := range n {
-                res[k] = err
-            }
-            ch <- res
-        }(i, shard)
+        }(shard, t[i])
     }
 
-    all := make(map[string]error, len(m))
-    for i := 0; i < len(c.shards); i++ {
-        res := <- ch
-        for k, v := range res {
-            all[k] = v
+    ps := make([]redis.KVPair, len(ks))
+    for i, j := 0, 0; i < len(c.shards) && j < len(ks); i++ {
+        pairs := <- ch
+        for _, v := range pairs {
+            ps[j] = v
+            j++
         }
     }
-    return all
+    return ps
+}
+
+
+func (c Shardis) Mset(ps []redis.KVPair) [][]byte {
+    if len(ps) == 0 {
+        return nil
+    }
+
+    parts := c.locatePairs(ps...)
+    ch := make(chan int, len(c.shards))
+    for i, shard := range c.shards {
+        go func(i int, pairs []redis.KVPair, shard *redis.Redis) {
+            err := shard.Mset(pairs...)
+            if err == nil {
+                ch <- i
+            } else {
+                ch <- -1
+            }
+        }(i, parts[i], shard)
+    }
+
+    ks := make([][]byte, 0)
+    for i := 0; i < len(c.shards); i++ {
+        if id := <- ch; id >= 0 {
+            for _, p := range parts[id] {
+                ks = append(ks, p.K)
+            }
+        }
+    }
+    return ks
 }

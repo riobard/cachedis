@@ -85,14 +85,14 @@ func (p Proxy) proxy(req *redis.Message) (rsp *redis.Message) {
 
 
 func (p Proxy) proxyGet(req, rsp *redis.Message) {
-    b, _ := p.s.Get(string(req.Values[1]))
+    b, _ := p.s.Get(req.Values[1])
     rsp.Kind = '$'
     rsp.Value = b
 }
 
 func (p Proxy) proxySet(req, rsp *redis.Message) {
     if len(req.Values) > 2 {
-        err := p.s.Set(string(req.Values[1]), req.Values[2])
+        err := p.s.Set(req.Values[1], req.Values[2])
         if err == nil {
             rsp.Kind = '+'
             rsp.Value = []byte("OK")
@@ -107,9 +107,9 @@ func (p Proxy) proxySet(req, rsp *redis.Message) {
 }
 
 func (p Proxy) proxyDel(req, rsp *redis.Message) {
-    ks := make([]string, len(req.Values[1:]))
+    ks := make([][]byte, len(req.Values[1:]))
     for i, v := range req.Values[1:] {
-        ks[i] = string(v)
+        ks[i] = v
     }
     n, _ := p.s.Del(ks...)
     rsp.Kind = ':'
@@ -117,47 +117,47 @@ func (p Proxy) proxyDel(req, rsp *redis.Message) {
 }
 
 func (p Proxy) proxyMget(req, rsp *redis.Message) {
-    ks := make([]string, len(req.Values[1:]))
+    ks := make([][]byte, len(req.Values[1:]))
     for i, v := range req.Values[1:] {
-        ks[i] = string(v)
+        ks[i] = v
     }
-    m, err := p.s.Mget(ks...)
+    ps := p.s.Mget(ks...)
 
-    if err != nil {
+    if len(ps) != len(ks) {
         rsp.Kind = '-'
         rsp.Value = E_PROXY
     } else {
         rsp.Kind = '*'
         rsp.Values = make([][]byte, len(ks))
-        for i, k := range ks {
-            rsp.Values[i] = m[k]
+        for i := range ks {
+            rsp.Values[i] = ps[i].V
         }
     }
 }
 
 func (p Proxy) proxyMset(req, rsp *redis.Message) {
     n := len(req.Values[1:])/2
-    ks := make([]string, n)
+    ks := make([][]byte, n)
     vs := make([][]byte, n)
     for i, v := range req.Values[1:] {
         if i % 2 == 0 {
-            ks[i/2] = string(v)
+            ks[i/2] = v
         } else {
             vs[i/2] = v
         }
     }
-    kvm := make(map[string][]byte, n)
+
+    ps := make([]redis.KVPair, n)
     for i := 0; i < n; i++ {
-        kvm[string(ks[i])] = vs[i]
+        ps[i].K = ks[i]
+        ps[i].V = vs[i]
     }
 
-    m := p.s.Mset(kvm)
-    for _, err := range m {
-        if err != nil {
-            rsp.Kind = '-'
-            rsp.Value = []byte("MSET failed")
-            return
-        }
+    ks2 := p.s.Mset(ps)
+    if len(ks) != len(ks2) {
+        rsp.Kind = '-'
+        rsp.Value = []byte("MSET failed")
+        return
     }
     rsp.Kind = '+'
     rsp.Value = []byte("OK")

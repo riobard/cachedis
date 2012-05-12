@@ -105,11 +105,11 @@ func TestSetGet(t *testing.T) {
     }
     v := make([]byte, 500)
     rand.Read(v)
-    err = r.Set("hello", v)
+    err = r.Set([]byte("hello"), v)
     if err != nil {
         t.Fatal(err)
     }
-    v2, err := r.Get("hello")
+    v2, err := r.Get([]byte("hello"))
     if err != nil {
         t.Fatal(err)
     }
@@ -125,24 +125,29 @@ func TestMsetMget(t *testing.T) {
         t.Fatal(err)
     }
 
-    keys := []string{"foo", "bar", "spam", "egg"}
-    m := map[string][]byte{}
-    for _, key := range keys {
+    ks := [][]byte{[]byte("foo"), 
+                   []byte("bar"), 
+                   []byte("spam"), 
+                   []byte("egg")}
+
+    ps := make([]KVPair, len(ks))
+
+    for i, k := range ks {
         v := make([]byte, 500)
         rand.Read(v)
-        m[key] = v
+        ps[i] = KVPair{K: k, V: v}
     }
 
-    if err := r.Mset(m); err != nil {
+    if err := r.Mset(ps...); err != nil {
         t.Fatal(err)
     }
 
-    m2, err := r.Mget(keys...)
+    vs, err := r.Mget(ks...)
     if err != nil {
         t.Fatal(err)
     }
-    for k := range m {
-        if bytes.Compare(m[k], m2[k]) != 0 {
+    for i := 0; i < len(ks); i++ {
+        if bytes.Compare(ps[i].V, vs[i]) != 0 {
             t.Fatal("MGET/MSET returned different results")
         }
     }
@@ -155,12 +160,17 @@ func TestDel(t *testing.T) {
         t.Fatal(err)
     }
 
-    keys := []string{"foo", "bar", "spam", "egg", "hello"}
-    n, err := r.Del(keys...)
+    ks := [][]byte{[]byte("foo"), 
+                   []byte("bar"), 
+                   []byte("spam"), 
+                   []byte("egg"), 
+                   []byte("hello")}
+
+    n, err := r.Del(ks...)
     if err != nil {
         t.Fatal(err)
     }
-    if n != len(keys) {
+    if n != len(ks) {
         t.Fatal("DEL less keys than expected")
     }
 }

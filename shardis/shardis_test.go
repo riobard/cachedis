@@ -4,7 +4,7 @@ import (
     "testing"
     "crypto/rand"
     "bytes"
-    "fmt"
+    "../redis"
 )
 
 
@@ -15,17 +15,17 @@ var shards = []string{
     "localhost:6379",
 }
 
-var testKeys = []string{
-    "shardis-test-key0",
-    "shardis-test-key1",
-    "shardis-test-key2",
-    "shardis-test-key3",
-    "shardis-test-key4",
-    "shardis-test-key5",
-    "shardis-test-key6",
-    "shardis-test-key7",
-    "shardis-test-key8",
-    "shardis-test-key9",
+var testKeys = [][]byte{
+    []byte("shardis-test-key0"),
+    []byte("shardis-test-key1"),
+    []byte("shardis-test-key2"),
+    []byte("shardis-test-key3"),
+    []byte("shardis-test-key4"),
+    []byte("shardis-test-key5"),
+    []byte("shardis-test-key6"),
+    []byte("shardis-test-key7"),
+    []byte("shardis-test-key8"),
+    []byte("shardis-test-key9"),
 }
 
 
@@ -58,28 +58,23 @@ func TestMsetMget(t *testing.T) {
         t.Fatal(err)
     }
 
-    m := map[string][]byte{}
-    for _, key := range testKeys {
+    ps := make([]redis.KVPair, len(testKeys))
+    for i, k := range testKeys {
         v := make([]byte, 500)
         rand.Read(v)
-        m[key] = v
+        ps[i].K = k
+        ps[i].V = v
     }
 
-    rs := r.Mset(m)
-    for key, err := range rs {
-        if err != nil {
-            t.Fatalf("Failed to MSET key %q. Error: %q\n", key, err)
-        }
+    ks := r.Mset(ps)
+    if len(ks) != len(ps) {
+        t.Fatalf("Failed to MSET some keys")
     }
 
-    m2, err := r.Mget(testKeys...)
-    if err != nil {
-        t.Fatal(err)
-    }
-    for k := range m {
-        if bytes.Compare(m[k], m2[k]) != 0 {
-            t.Fatal("MGET/MSET returned different results")
-        }
+    ps2 := r.Mget(testKeys...)
+
+    if len(ps) != len(ps2) {
+        t.Fatal("MGET/MSET returned different results")
     }
 }
 
@@ -101,6 +96,7 @@ func TestDel(t *testing.T) {
 
 
 
+/*
 func BenchmarkMset(b *testing.B) {
     b.StopTimer()
 
@@ -161,3 +157,4 @@ func BenchmarkGet(b *testing.B) {
     }
     b.StopTimer()
 }
+*/
